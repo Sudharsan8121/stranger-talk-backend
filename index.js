@@ -9,7 +9,7 @@ const server = http.createServer(app);
 // Configure CORS for Socket.IO
 const io = socketIo(server, {
   cors: {
-    origin: ["https://exquisite-gelato-aa6d68.netlify.app/"],
+    origin: ["https://exquisite-gelato-aa6d68.netlify.app"],
     methods: ["GET", "POST"],
     credentials: true
   },

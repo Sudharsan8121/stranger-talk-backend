@@ -1,14 +1,19 @@
 {
-  "name": "server",
+  "name": "stranger-talk-backend",
   "version": "1.0.0",
+  "description": "Backend server for StrangerTalk Chat App using Express and Socket.io",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "socket.io",
+    "express",
+    "chat-app",
+    "stranger-talk"
+  ],
+  "author": "Sudharsan",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^17.0.0",
