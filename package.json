@@ -2,9 +2,9 @@
   "name": "stranger-talk-backend",
   "version": "1.0.0",
   "description": "Backend server for StrangerTalk Chat App using Express and Socket.io",
-  "main": "index.js",
+  "main": "server/index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node server/index.js"
   },
   "keywords": [
     "socket.io",
