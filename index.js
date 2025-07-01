@@ -6,11 +6,11 @@ const cors = require('cors');
 const app = express();
 const server = http.createServer(app);
 
-// Configure CORS for Socket.IO
+// ✅ Full Dev Access: Allow All Origins (development only!)
 const io = socketIo(server, {
   cors: {
-    origin: ["https://exquisite-gelato-aa6d68.netlify.app"],
-    methods: ["GET", "POST"],
+    origin: "https://exquisite-gelato-aa6d68.netlify.app",
+    methods: ['GET', 'POST'],
     credentials: true
   },
   transports: ['websocket', 'polling']
@@ -19,41 +19,38 @@ const io = socketIo(server, {
 app.use(cors());
 app.use(express.json());
 
-// Store active users and rooms
+// ✅ Add this route so backend doesn't return 404 at root
+app.get('/', (req, res) => {
+  res.send('🟢 Stranger Talk Backend Running');
+});
+// 💬 Active data stores
 const activeUsers = new Map();
 const waitingUsers = new Set();
 const activeRooms = new Map();
-const blockedUsers = new Map(); // userId -> Set of blocked user IDs
+const blockedUsers = new Map(); // userId → Set of blocked userIds
 
-// Utility functions
-const generateRoomId = () => {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-};
+// 📦 Utility Functions
+const generateRoomId = () =>
+  Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
 const findMatch = (userId) => {
-  // Remove user from waiting list first
   waitingUsers.delete(userId);
-  
-  // Find another waiting user (not blocked)
   const userBlockList = blockedUsers.get(userId) || new Set();
-  
+
   for (const waitingUserId of waitingUsers) {
-    const waitingUserBlockList = blockedUsers.get(waitingUserId) || new Set();
-    
-    // Check if users haven't blocked each other
-    if (!userBlockList.has(waitingUserId) && !waitingUserBlockList.has(userId)) {
+    const partnerBlockList = blockedUsers.get(waitingUserId) || new Set();
+
+    if (!userBlockList.has(waitingUserId) && !partnerBlockList.has(userId)) {
       waitingUsers.delete(waitingUserId);
       return waitingUserId;
     }
   }
-  
   return null;
 };
 
 const cleanupRoom = (roomId) => {
   const room = activeRooms.get(roomId);
   if (room) {
-    // Notify both users that chat ended
     room.users.forEach(userId => {
       const user = activeUsers.get(userId);
       if (user) {
@@ -65,89 +62,68 @@ const cleanupRoom = (roomId) => {
   }
 };
 
+// 🔌 Socket Events
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
-  
-  // Send current user count
+  console.log('🟢 User connected:', socket.id);
   io.emit('userCount', activeUsers.size + 1);
 
   socket.on('findMatch', ({ avatar, nickname }) => {
-    console.log('User looking for match:', socket.id);
-    
-    // Store user info
-    activeUsers.set(socket.id, {
-      socket,
-      avatar,
-      nickname,
-      roomId: null
-    });
-    
-    // Update user count
+    console.log('🔎 Matching request from:', socket.id);
+
+    activeUsers.set(socket.id, { socket, avatar, nickname, roomId: null });
     io.emit('userCount', activeUsers.size);
-    
-    // Try to find a match
+
     const partnerId = findMatch(socket.id);
-    
     if (partnerId) {
-      // Create room for matched users
       const roomId = generateRoomId();
       const partner = activeUsers.get(partnerId);
-      
+
       if (partner) {
-        // Update user room info
         activeUsers.get(socket.id).roomId = roomId;
         partner.roomId = roomId;
-        
-        // Store room info
+
         activeRooms.set(roomId, {
           users: [socket.id, partnerId],
           createdAt: new Date()
         });
-        
-        // Notify both users
+
         socket.emit('matchFound', { roomId, partnerId });
         partner.socket.emit('matchFound', { roomId, partnerId: socket.id });
-        
-        console.log('Match found:', socket.id, 'with', partnerId, 'in room', roomId);
+
+        console.log(`✅ Match: ${socket.id} ↔ ${partnerId} in Room: ${roomId}`);
       }
     } else {
-      // Add to waiting list
       waitingUsers.add(socket.id);
-      console.log('User added to waiting list:', socket.id);
-      
-      // Set timeout for search
+      console.log('⏳ User added to waiting list:', socket.id);
+
       setTimeout(() => {
         if (waitingUsers.has(socket.id)) {
           waitingUsers.delete(socket.id);
           socket.emit('searchTimeout');
         }
-      }, 30000); // 30 seconds timeout
+      }, 30000);
     }
   });
 
   socket.on('cancelSearch', () => {
     waitingUsers.delete(socket.id);
-    console.log('User cancelled search:', socket.id);
+    console.log('❌ Search cancelled:', socket.id);
   });
 
   socket.on('joinRoom', (roomId) => {
     socket.join(roomId);
-    
     const room = activeRooms.get(roomId);
     if (room) {
       const partnerId = room.users.find(id => id !== socket.id);
       const partner = activeUsers.get(partnerId);
       const currentUser = activeUsers.get(socket.id);
-      
+
       if (partner && currentUser) {
-        // Send partner info to current user
         socket.emit('partnerInfo', {
           id: partnerId,
           avatar: partner.avatar,
           nickname: partner.nickname
         });
-        
-        // Send current user info to partner
         partner.socket.emit('partnerInfo', {
           id: socket.id,
           avatar: currentUser.avatar,
@@ -155,22 +131,19 @@ io.on('connection', (socket) => {
         });
       }
     }
-    
-    console.log('User joined room:', socket.id, roomId);
+    console.log('🏠 User joined room:', socket.id, roomId);
   });
 
   socket.on('sendMessage', ({ roomId, message }) => {
     const room = activeRooms.get(roomId);
     if (room && room.users.includes(socket.id)) {
-      // Send message to partner only
       socket.to(roomId).emit('newMessage', {
         id: Date.now(),
         content: message,
         sender: 'partner',
         timestamp: new Date()
       });
-      
-      console.log('Message sent in room:', roomId);
+      console.log('📨 Message sent in room:', roomId);
     }
   });
 
@@ -181,80 +154,57 @@ io.on('connection', (socket) => {
   socket.on('leaveRoom', (roomId) => {
     socket.leave(roomId);
     socket.to(roomId).emit('partnerDisconnected');
-    
+
     const user = activeUsers.get(socket.id);
-    if (user) {
-      user.roomId = null;
-    }
-    
-    console.log('User left room:', socket.id, roomId);
+    if (user) user.roomId = null;
+
+    console.log('🚪 User left room:', socket.id, roomId);
   });
 
   socket.on('reportUser', ({ roomId, reason, reportedUserId }) => {
-    console.log('User reported:', reportedUserId, 'by:', socket.id, 'reason:', reason);
-    
-    // In a real app, you'd store this in a database
-    // For now, we'll just log it and potentially disconnect the reported user
-    
-    // Clean up the room
+    console.log('⚠️ Report:', reportedUserId, 'by', socket.id, 'Reason:', reason);
     cleanupRoom(roomId);
   });
 
   socket.on('blockUser', ({ roomId, blockedUserId }) => {
-    console.log('User blocked:', blockedUserId, 'by:', socket.id);
-    
-    // Add to block list
-    if (!blockedUsers.has(socket.id)) {
-      blockedUsers.set(socket.id, new Set());
-    }
+    console.log('🚫 Block:', blockedUserId, 'by', socket.id);
+    if (!blockedUsers.has(socket.id)) blockedUsers.set(socket.id, new Set());
     blockedUsers.get(socket.id).add(blockedUserId);
-    
-    // Clean up the room
     cleanupRoom(roomId);
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-    
-    // Remove from waiting list
+    console.log('🔴 User disconnected:', socket.id);
     waitingUsers.delete(socket.id);
-    
-    // Get user info before removing
+
     const user = activeUsers.get(socket.id);
     if (user && user.roomId) {
-      // Notify partner about disconnection
       socket.to(user.roomId).emit('partnerDisconnected');
-      
-      // Clean up room
+
       const room = activeRooms.get(user.roomId);
       if (room) {
         room.users = room.users.filter(id => id !== socket.id);
-        if (room.users.length === 0) {
-          activeRooms.delete(user.roomId);
-        }
+        if (room.users.length === 0) activeRooms.delete(user.roomId);
       }
     }
-    
-    // Remove user
+
     activeUsers.delete(socket.id);
-    
-    // Update user count
     io.emit('userCount', activeUsers.size);
   });
 });
 
-// Clean up old rooms periodically
+// 🧹 Clean up old rooms every 5 minutes
 setInterval(() => {
   const now = new Date();
   for (const [roomId, room] of activeRooms.entries()) {
-    // Remove rooms older than 1 hour
     if (now - room.createdAt > 60 * 60 * 1000) {
       cleanupRoom(roomId);
     }
   }
-}, 5 * 60 * 1000); // Check every 5 minutes
+}, 5 * 60 * 1000);
 
+// 🚀 Start Server (Full Network Access)
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🌐 Server running on port ${PORT}`);
 });
